@@ -1,0 +1,36 @@
+<script>
+/**
+ * GTM Tag: CUIC Fallback – Image-Based Cookie Request
+ *
+ * Sends a transparent <img> request to the cookie endpoint to ensure the
+ * "tkncstm" cookie is set, even in privacy-restricted browsers (e.g. Safari, Firefox with ITP/ETP).
+ *
+ * This fallback mechanism is already included in the main controller script (cuic_controller.html).
+ * However, this tag can be used as a standalone fallback if you want to:
+ * - Control the fallback logic separately (e.g. with different triggers or sequencing)
+ * - Ensure guaranteed coverage when the controller is disabled, skipped, or fails silently
+ *
+ * This script dynamically builds the request using location.origin (no GTM variables required).
+ *
+ * © Florian Pankarter, / MEDIAFAKTUR – Marketing Performance Precision  
+ * https://mediafaktur.marketing · fp@mediafaktur.marketing  
+ * GitHub: https://github.com/mediafaktur/gtm-custom-user-id-cookie  
+ * License: MIT
+ */
+
+(function() {
+  // Get the user ID from GTM variable (either cookie or fallback-generated)
+  var userId = {{jsUserIdCheck}};
+  if (!userId) return;
+
+  // Build the endpoint URL dynamically based on current domain
+  var endpoint = location.origin + "/cuic_cookie-handler.php";
+
+  // Create and inject <img> request
+  var img = new Image();
+  img.src = endpoint + "?tkncstm=" + encodeURIComponent(userId);
+  img.alt = "";
+  img.style.display = "none";
+  document.body.appendChild(img);
+})();
+</script>

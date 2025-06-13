@@ -1,0 +1,90 @@
+<script>
+
+/**
+ * GTM Tag: Custom User ID Controller
+ * Sends a server-side request to set a long-lived, HTTP-only first-party cookie ("tkncstm").
+ * This controller initializes the user ID, verifies its presence, and dispatches it to the server.
+ *
+ * Used within the GTM Web Container after user consent to ensure consistent user identification.
+ * Part of the custom ID infrastructure based on client-server integration.
+ *
+ * © Florian Pankarter, / MEDIAFAKTUR - Marketing Performance Precision  
+ * https://mediafaktur.marketing · fp@mediafaktur.marketing  
+ * GitHub: https://github.com/mediafaktur/gtm-custom-user-id-cookie  
+ * License: MIT
+ */
+
+(function() {
+  
+  // Retrieve the user ID from the dataLayer or fallback generator
+  var userId = {{jsUserIdCheck}};
+  if (!userId) return; // Exit early if no valid ID is present
+
+  // Define server endpoint based on current origin (e.g. https://www.example.com)
+  var baseUrl = location.origin;
+  var endpoint = baseUrl + "/cuic_tkncstm.php";
+
+  // Initialize XHR request to set the secure cookie
+  var xhr = new XMLHttpRequest();
+  xhr.open("POST", endpoint, true);
+  xhr.withCredentials = true; // Include credentials for same-origin cookies
+  xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+  xhr.timeout = 3000; // Fail after 3 seconds if the request hangs
+
+  // Track whether fallback was already used
+  var fallbackTriggered = false;
+
+  // Fallback method: send <img> request if XHR fails
+  function triggerFallback() {
+    if (fallbackTriggered) return;
+    fallbackTriggered = true;
+
+    var img = new Image();
+    img.src = endpoint + "?tkncstm=" + encodeURIComponent(userId);
+    img.alt = "";
+    img.style.display = "none";
+    document.body.appendChild(img); // Trigger fallback cookie set via image request
+  }
+
+  // Handle XHR response
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState !== 4) return; // Wait for response completion
+
+    try {
+
+      // Attempt to parse JSON response
+      var response = JSON.parse(xhr.responseText || '{}');
+
+      // If server returns no usable token, use fallback
+      if (xhr.status !== 200 || !response.token) {
+        triggerFallback();
+
+        // Optionally: log server error response
+        // console.warn("Failed to set tkncstm cookie:", response);        
+      } else {
+        // Optionally: push success into dataLayer
+        // dataLayer.push({ event: "tkncstm_cookie_set", token: response.token });
+      }
+
+    } catch (e) {
+
+      // Fallback on invalid JSON or unexpected response
+      triggerFallback();
+
+      // Optionally: handle invalid or unexpected response
+      // console.error("Invalid JSON response while setting cookie:", xhr.responseText);
+    }
+  };
+
+  // Handle timeouts and connection issues
+  xhr.onerror = xhr.ontimeout = function() {
+    triggerFallback(); 
+    // Optionally: log the failure or implement retry logic
+    // console.error("tkncstm request failed or timed out");
+  };
+
+  // Send the request with the user ID as a POST parameter
+  xhr.send("tkncstm=" + encodeURIComponent(userId));
+
+})();
+</script>
