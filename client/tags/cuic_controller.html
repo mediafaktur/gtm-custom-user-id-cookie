@@ -2,89 +2,117 @@
 
 /**
  * GTM Tag: Custom User ID Controller
- * Sends a server-side request to set a long-lived, HTTP-only first-party cookie ("tkncstm").
- * This controller initializes the user ID, verifies its presence, and dispatches it to the server.
+ * 
+ * cuic_controller.html
  *
- * Used within the GTM Web Container after user consent to ensure consistent user identification.
- * Part of the custom ID infrastructure based on client-server integration.
+ * Sends a configurable request to the CUIC cookie handler (`cuic_cookie-handler.php`)
+ * to set a long-lived, HTTP-only first-party cookie used for user identification.
  *
- * © Florian Pankarter, / MEDIAFAKTUR - Marketing Performance Precision  
+ * The controller reads a user ID (generated or persisted), validates it, and dispatches
+ * it to the server via XHR (with fallback). Additional parameters allow full configuration
+ * of the resulting cookie (name, lifetime, visibility, refresh behavior).
+ *
+ * Intended to run after valid consent inside a Web GTM Container.
+ *
+ * Requires:
+ * - Variable jsUserIdResolved → resolves ID (from cookie or generator)
+ * - Optional: GTM variables for cookieName, refresh, httpOnly, maxAge
+ *
+ * Fallback via GET (img) is triggered if the XHR fails or times out.
+ * 
+ * ---
+ * 
+ * © Florian Pankarter, / MEDIAFAKTUR – Marketing Performance Precision  
  * https://mediafaktur.marketing · fp@mediafaktur.marketing  
  * GitHub: https://github.com/mediafaktur/gtm-custom-user-id-cookie  
  * License: MIT
+ * 
  */
 
 (function() {
-  
-  // Retrieve the user ID from the dataLayer or fallback generator
-  var userId = {{jsUserIdCheck}};
-  if (!userId) return; // Exit early if no valid ID is present
 
-  // Define server endpoint based on current origin (e.g. https://www.example.com)
-  var baseUrl = location.origin;
-  var endpoint = baseUrl + "/cuic_tkncstm.php";
+  // === Retrieve the user ID from dataLayer or generator ===
+  var userId = {{jsUserIdResolved}};
+  if (!userId) return; // Abort if no usable ID is present
 
-  // Initialize XHR request to set the secure cookie
-  var xhr = new XMLHttpRequest();
-  xhr.open("POST", endpoint, true);
-  xhr.withCredentials = true; // Include credentials for same-origin cookies
-  xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-  xhr.timeout = 3000; // Fail after 3 seconds if the request hangs
+  // === Optional GTM Variable overrides (example: via Tag Template) ===
+  var cookieName = "tkncstm_10";      // Name of the cookie
+  var refresh    = "1";               // "1" = always refresh, "0" = only if missing
+  var httpOnly   = "1";               // "1" = server sets HTTP-only, "0" = JS-visible
+  var maxAge     = 31536000;          // Max-Age in seconds (default: 1 year)
 
-  // Track whether fallback was already used
+  // === Define endpoint on current domain ===
+  var endpoint = location.origin + "/cuic_cookie-handler.php";
+
+  // === Create fallback via GET (img) if XHR fails ===
   var fallbackTriggered = false;
-
-  // Fallback method: send <img> request if XHR fails
   function triggerFallback() {
     if (fallbackTriggered) return;
     fallbackTriggered = true;
 
     var img = new Image();
-    img.src = endpoint + "?tkncstm=" + encodeURIComponent(userId);
+    img.src = endpoint +
+      "?cuic=" + encodeURIComponent(userId) +
+      "&cn=" + encodeURIComponent(cookieName) +
+      "&refresh=" + encodeURIComponent(refresh) +
+      "&httpOnly=" + encodeURIComponent(httpOnly) +
+      "&maxAge=" + encodeURIComponent(maxAge);
     img.alt = "";
     img.style.display = "none";
-    document.body.appendChild(img); // Trigger fallback cookie set via image request
+    document.body.appendChild(img);
+
+    // Optionally: track fallback usage
+    dataLayer.push({ event: "cuic_fallback_used" });
   }
 
-  // Handle XHR response
-  xhr.onreadystatechange = function() {
-    if (xhr.readyState !== 4) return; // Wait for response completion
+  // === Create XHR request ===
+  var xhr = new XMLHttpRequest();
+  xhr.open("POST", endpoint, true);
+  xhr.withCredentials = true;
+  xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+  xhr.timeout = 3000;
 
+xhr.onreadystatechange = function() {
+  if (xhr.readyState !== 4) return;
+
+  if (xhr.status === 200) {
     try {
-
-      // Attempt to parse JSON response
       var response = JSON.parse(xhr.responseText || '{}');
 
-      // If server returns no usable token, use fallback
-      if (xhr.status !== 200 || !response.token) {
-        triggerFallback();
-
-        // Optionally: log server error response
-        // console.warn("Failed to set tkncstm cookie:", response);        
-      } else {
-        // Optionally: push success into dataLayer
-        // dataLayer.push({ event: "tkncstm_cookie_set", token: response.token });
+      // Accept any response that includes cookie and value (as returned by PHP)
+      if (response && response.cookie && response.value) {
+        dataLayer.push({
+          event: "cuic_cookie_set",
+          cookie: response.cookie,
+          value: response.value
+        });
+        return; // SUCCESS → no fallback
       }
-
     } catch (e) {
-
-      // Fallback on invalid JSON or unexpected response
-      triggerFallback();
-
-      // Optionally: handle invalid or unexpected response
-      // console.error("Invalid JSON response while setting cookie:", xhr.responseText);
+      // JSON parse failed → fall through to fallback
     }
-  };
+  }
 
-  // Handle timeouts and connection issues
+  // ERROR → fallback
+  triggerFallback();
+};
+
+
   xhr.onerror = xhr.ontimeout = function() {
-    triggerFallback(); 
-    // Optionally: log the failure or implement retry logic
-    // console.error("tkncstm request failed or timed out");
+    triggerFallback();
+    // Optionally: log error
+    // console.error("CUIC request failed or timed out");
   };
 
-  // Send the request with the user ID as a POST parameter
-  xhr.send("tkncstm=" + encodeURIComponent(userId));
+  // === Compose payload and send ===
+  var payload =
+    "cuic=" + encodeURIComponent(userId) +
+    "&cn=" + encodeURIComponent(cookieName) +
+    "&refresh=" + encodeURIComponent(refresh) +
+    "&httpOnly=" + encodeURIComponent(httpOnly) +
+    "&maxAge=" + encodeURIComponent(maxAge);
+
+  xhr.send(payload);
 
 })();
 </script>

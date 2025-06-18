@@ -1,5 +1,9 @@
 <?php
+
 /**
+ * GTM Custom User ID Cookie (CUIC)
+ * Consent-based, cross-session user identification via secure first-party cookie.
+ *
  * data-layer-snippet.php
  *
  * Injects the Custom User ID ("tkncstm") from an HTTP-only cookie into the JavaScript dataLayer.
