@@ -10,76 +10,65 @@ CUIC is fully compatible with ITP/ETP restrictions and enables stable cross-sess
 
 All key behaviors — such as cookie name, expiration, refresh policy, and visibility — are controlled centrally via GTM. No PHP code changes are needed to switch between test and production setups.
 
-**Best results** are achieved by combining all CUIC components:
-- **GTM Tag**: creates and dispatches the ID (`cuic_controller.html`)
-- **Cookie Handler**: securely stores the cookie (`cuic_cookie-handler.php`)
-- **Data Layer Snippet**: exposes the cookie value to GTM (`cuic_datalayer-snippet.php`)
 
 ## Key Features
 
 * Persistent first-party, secure, HTTP-only cookie (SameSite=Lax)
 * ID available on first pageview – usable before the cookie is stored
-* Fully consent-controlled via GTM
-* No fingerprinting, no localStorage, no third-party cookies
+* Fully consent-controllable via GTM
 * Compatible with Safari/Firefox ITP/ETP restrictions
 * HTTP-only cookie value accessible via GTM data layer 
 * Entire behavior (refresh, name, expiration) controlled via GTM
 * Optional fallback via <img> if XHR is blocked
 * Ideal for GA4 user_id and server-side tracking setups
-* Supports both production and test scenarios
 
-## Components Overview
+## What Problem Does CUIC Solve?
 
-#### `jsUserIdCreate.js`
+| 🔍 Problem                                                                                                            | ✅ CUIC Solution                                                                                                                               |
+|:--------------------------------------------------------------------------------------------------------------------- |:--------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1st-party, long-lived cookie required, but: <br>only valid if set server-side with secure, same-origin conditions | CUIC sets the cookie server-side on the main domain using PHP — not via JavaScript                                                        |
+| Consent is required before setting any ID, including via server                                                   | CUIC integrates seamlessly with GTM consent triggers, ensuring privacy compliance                                                         |
+| GA4 and server must use the same ID immediately, even before the cookie exists                                    | CUIC uses a central variable (`jsUserIdResolve`) to generate or reuse the ID and send it simultaneously to GA4 and the cookie handler |
+| On subsequent pageviews, the HttpOnly cookie is not accessible via JS, and the ID must still be available in GTM  | CUIC exposes the cookie value via a PHP dataLayer snippet (`cuic_datalayer-snippet.php`), making the ID available before GTM loads    |
+| Multiple entry points / pageviews must not generate multiple IDs                                                  | CUIC ensures consistent logic in both GTM and PHP: existing values are always reused if present (in dataLayer or cookies)                 |
+| Safari and Firefox block or shorten JS-set cookies                                                                | CUIC fully complies with Safari/Firefox ITP: 1st party, secure, SameSite=Lax, server-set, HttpOnly                                            |
+| XHR requests may fail due to ad blockers or ITP                                                                   | CUIC includes an automatic fallback using an image GET request if the main XHR fails                                                      |
 
-* **Type:** GTM JavaScript Variable
-* **Purpose:** Generates a unique user ID as `{timestamp}_{random}`
-* **Usage:** Add as a **Custom JavaScript Variable** "jsUserIdCreate" in GTM
+## Architecture & Data Flow
 
-#### `jsUserIdCheck.js`
+The diagram below illustrates the CUIC cookie lifecycle across first and subsequent pageviews:
 
-* **Type:** GTM JavaScript Variable
-* **Purpose:** Returns the current user ID from the Data Layer or fallback to ID create
-* **Usage:** Add as a **Custom JavaScript Variable** "jsUserIdCheck" in GTM
+![CUIC Architecture & Data Flow](assets/cuic-architecture-and-data-flow.png)
 
-#### `cuic_controller.html`
+## Components
 
-- **Type:** GTM Custom HTML Tag  
-- **Purpose:** Sends the ID to the server via XHR + optional `<img>` fallback  
-- **Usage:** Trigger once after valid consent  
-- **Features:**
-  - Uses `POST` to `/cuic_cookie-handler.php`
-  - Automatically falls back to GET if needed
-  - All config (cookie name, refresh, expiration, visibility) passed via POST
+* **`cuic_cookie-handler.php`**<br>Server-side handler that sets the cookie via POST or GET – supports dynamic config via GTM
+* **`cuic_datalayer-snippet.php`**<br>PHP snippet which exposes the cookie value to the `dataLayer` via PHP – required when using `HttpOnly` cookies
+* **`cuic_controller.html`**<br>GTM Custom HTML tag that sends the ID to the server – includes XHR logic with fallback image request 
+* **`jsUserIdResolve.js`**<br>Central GTM variable that checks for an existing value in the dataLayer (from cookie snippet or previous tag push) or creates a new ID on first pageview – ensures consistent value at all times
 
-#### `cuic_cookie-handler.php`
+## Installation Guide
 
-- **Type:** Server-side PHP Script  
-- **Purpose:** Receives and stores the user ID cookie with configurable behavior  
-- **Usage:** Deploy on your own domain (same origin required)  
-- **Configurable via GTM parameters:**
-  - `cuic` → cookie value (required)
-  - `cn` → cookie name (default: `tkncstm`)
-  - `refresh` → `1` = always refresh (default), `0` = set once
-  - `httpOnly` → `1` = HTTP-only (default), `0` = readable by JS
-  - `maxAge` → cookie lifetime in seconds (default: 31536000 = 1 year)
+1. **Deploy the server scripts** to your main domain (same origin as your GTM container):
+   - `/cuic_cookie-handler.php`
+   - `/cuic_datalayer-snippet.php` (include in `<head>` before GTM)
 
-Returns either JSON or 1x1 GIF depending on `Accept` header.
+2. **Create GTM variables**:
+   - Add `jsUserIdResolve.js` as a **Custom JavaScript Variable**
+   - Name it `jsUserIdResolved` or similar
 
-#### `cuic_datalayer-snippet.php`
+3. **Add the GTM tag**:
+   - Use `cuic_controller.html` as a **Custom HTML Tag**
+   - Adjust path to `/cuic_cookie-handler.php` if needed
+   - Reference the `jsUserIdResolved` variable in the tag
+   - Trigger only **after valid consent**
 
-- **Type:** PHP snippet  
-- **Purpose:** Exposes the cookie value to the `dataLayer` before GTM loads  
-- **Usage:** Include in `<head>`, before GTM script tag  
-- **Why it matters:** Needed to make HTTP-only cookie values accessible to GTM
+4. **Make the ID available to GA4**:
+   - Use `{{jsUserIdResolved}}` as `user_id` in your GA4 Config and Events
 
-## Installation
-
-1. Copy `/client/` and `/server/` files into your project
-2. Deploy PHP scripts (`cuic_cookie-handler.php`, `cuic_datalayer-snippet.php`) on your domain
-3. Import GTM variables & tags, configure triggers (e.g. after consent)
-4. Optionally adjust cookie domain if needed (`.example.com` vs subdomain)
-5. Use the `user_id` in GA4 config and events via variable - e.g. `{{DLV - tkncstm}}`
+5. **Customize behavior via GTM**:
+   - All cookie parameters (`name`, `refresh`, `maxAge`, `httpOnly`) are configurable via inline variables in the tag
+   - No PHP edits required
 
 ## Consent & Privacy
 
@@ -88,15 +77,16 @@ Returns either JSON or 1x1 GIF depending on `Accept` header.
 * No fingerprinting, no localStorage
 * Fully compliant with ITP, ETP, GDPR, and ePrivacy standards
 
-## Testing Scenarios
+## Use Case: Testing Multiple Cookie Variants
 
-CUIC supports flexible testing across browsers and scenarios without code changes to the server scripts. By adjusting GTM parameters like `maxAge`, `httpOnly`, and `refresh`, you can simulate:
+CUIC makes it easy to test different cookie configurations (e.g. name, expiration, visibility, refresh behavior) **without modifying any server-side code**. Just duplicate the GTM tag (`cuic_controller.html`) and adjust the inline config:
 
-- ITP/ETP impact in Safari/Firefox
-- Repeated visits and session boundaries
-- Differences between short-lived and persistent cookies
+- `cn`: cookie name (e.g. `tkncstm_test`)
+- `refresh`: `1` = extend on every visit, `0` = set once
+- `httpOnly`: `1` = HTTP-only (default), `0` = JS-readable
+- `maxAge`: cookie lifetime in seconds (e.g. `3600` for 1 hour)
 
-This enables flexible QA setups without modifying server code or redeploying scripts.
+You can run **multiple variants in parallel** using different GTM tags and triggers — all handled by the same `cuic_cookie-handler.php` on the server.
 
 ## License
 
