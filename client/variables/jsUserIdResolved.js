@@ -22,8 +22,8 @@ function() {
 
   // Step 1: Try to read from dataLayer
   for (var i = dl.length - 1; i >= 0; i--) {
-    if (dl[i] && typeof dl[i].tkncstm !== "undefined") {
-      // console.log("✅ CUIC ID from dataLayer:", dl[i].tkncstm);
+    if (dl[i] && typeof dl[i].tkncstm !== "undefined" && dl[i].tkncstm !== "") {
+      console.log("✅ CUIC ID from dataLayer:", dl[i].tkncstm);
       return dl[i].tkncstm;
     }
   }
